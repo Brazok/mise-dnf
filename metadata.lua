@@ -4,7 +4,7 @@
 
 PLUGIN = { -- luacheck: ignore
     -- Required: Tool name (lowercase, no spaces)
-    name = "mise-dnf",
+    name = "dnf",
 
     -- Required: Plugin version (not the tool version)
     version = "1.0.0",
@@ -13,7 +13,7 @@ PLUGIN = { -- luacheck: ignore
     description = "Install RPM packages into user-space via dnf download + rpm2cpio",
 
     -- Required: Plugin author/maintainer
-    author = "brazok",
+    author = "Brazok",
 
     -- Optional: Repository URL for plugin updates
     updateUrl = "https://github.com/brazok/mise-dnf",
