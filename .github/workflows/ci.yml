@@ -11,8 +11,13 @@ jobs:
   ci:
     strategy:
       matrix:
-        os: [fedora-latest]
+        os: [ubuntu-latest]
+        
     runs-on: ${{ matrix.os }}
+
+    container: 
+      image: fedora:latest
+
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
