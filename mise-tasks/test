@@ -2,6 +2,8 @@
 #MISE description="Run plugin tests - install an RPM package via dnf backend"
 set -euo pipefail
 
+mise settings experimental=true
+
 mise plugin link --force dnf .
 mise cache clear
 
