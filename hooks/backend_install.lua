@@ -24,7 +24,6 @@ end
 --- @return BackendInstallResult
 function PLUGIN:BackendInstall(ctx)
     local cmd = require("cmd")
-    local env = require("env")
 
     local tool = ctx.tool
     local version = ctx.version
@@ -54,7 +53,7 @@ function PLUGIN:BackendInstall(ctx)
 
     -- Symlink XDG resources into ~/.local/share so the desktop environment
     -- and shells can discover them without manual configuration.
-    local home = env.getenv("HOME")
+    local home = os.getenv("HOME")
     if home then
         local share_src = install_path .. "/usr/share"
         local share_dst = home .. "/.local/share"
