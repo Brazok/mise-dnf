@@ -1,3 +1,21 @@
+--- Resolves the actual RPM package name (handles Provides and file provides).
+local function resolve_pkg_name(tool, arch)
+    return string.format([[
+        arch=%q
+        name=%q
+        pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" "$name" 2>/dev/null | sort -u | head -1)
+        [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --whatprovides "$name" 2>/dev/null | grep -v 'No matches' | sort -u | head -1)
+        [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --file "/usr/bin/$name" 2>/dev/null | sort -u | head -1)
+        printf '%%s' "$pkg"
+    ]], arch, tool)
+end
+
+--- Maps mise arch to RPM arch string.
+local function rpm_arch()
+    local map = { amd64 = "x86_64", arm64 = "aarch64", ["386"] = "i686" }
+    return map[RUNTIME.archType] or "x86_64"
+end
+
 --- Symlinks files matching `pattern` from src/ directly into dst/ (flat, no recursion).
 local function link_flat(cmd, src, dst, pattern)
     cmd.exec(string.format(
@@ -24,19 +42,30 @@ end
 --- @return BackendInstallResult
 function PLUGIN:BackendInstall(ctx)
     local cmd = require("cmd")
+    local strings = require("strings")
 
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
 
-    local pkg_spec = (version == "latest") and tool or (tool .. "-" .. version)
+    -- Resolve the actual RPM package name so aliases like ykman-gui → yubikey-manager-qt work.
+    local arch = rpm_arch()
+    local resolved = strings.trim_space(cmd.exec(resolve_pkg_name(tool, arch)) or "")
+    if resolved == "" then
+        error(
+            "No RPM package found for '" .. tool .. "'.\n"
+            .. "Tip: run 'dnf search " .. tool .. "' to find the exact package name."
+        )
+    end
+
+    local pkg_spec = (version == "latest") and resolved or (resolved .. "-" .. version)
     local tmp_dir = install_path .. "/.tmp_rpm"
 
     cmd.exec("mkdir -p '" .. tmp_dir .. "'")
     cmd.exec("mkdir -p '" .. install_path .. "'")
 
     -- Download the RPM(s). --resolve pulls in direct dependencies.
-    local dl_out = cmd.exec("dnf download --resolve --destdir='" .. tmp_dir .. "' " .. pkg_spec .. " 2>&1")
+    local dl_out = cmd.exec("dnf download --resolve --destdir='" .. tmp_dir .. "' '" .. pkg_spec .. "' 2>&1")
     if not dl_out then
         error("dnf download failed for package: " .. pkg_spec)
     end

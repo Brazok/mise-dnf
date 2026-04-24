@@ -1,4 +1,23 @@
---- Lists available versions for an RPM package via dnf repoquery
+--- Resolves the actual RPM package name for a given tool spec.
+--- Falls back through: exact name → whatprovides → /usr/bin/<tool> file provide.
+local function resolve_pkg_name(tool, arch)
+    return string.format([[
+        arch=%q
+        name=%q
+        pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" "$name" 2>/dev/null | sort -u | head -1)
+        [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --whatprovides "$name" 2>/dev/null | grep -v 'No matches' | sort -u | head -1)
+        [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --file "/usr/bin/$name" 2>/dev/null | sort -u | head -1)
+        printf '%%s' "$pkg"
+    ]], arch, tool)
+end
+
+--- Maps mise arch to RPM arch string.
+local function rpm_arch()
+    local map = { amd64 = "x86_64", arm64 = "aarch64", ["386"] = "i686" }
+    return map[RUNTIME.archType] or "x86_64"
+end
+
+--- Lists available versions for an RPM package via dnf repoquery.
 --- @param ctx BackendListVersionsCtx
 --- @return BackendListVersionsResult
 function PLUGIN:BackendListVersions(ctx)
@@ -10,12 +29,25 @@ function PLUGIN:BackendListVersions(ctx)
         error("Tool name cannot be empty")
     end
 
+    local arch = rpm_arch()
+
+    -- Resolve the actual RPM package name (handles Provides and file provides).
+    local resolved = strings.trim_space(cmd.exec(resolve_pkg_name(tool, arch)) or "")
+    if resolved == "" then
+        error(
+            "No RPM package found for '" .. tool .. "'.\n"
+            .. "Tip: run 'dnf search " .. tool .. "' to find the exact package name."
+        )
+    end
+
     local result = cmd.exec(
-        "dnf repoquery --quiet --qf '%{version}-%{release}\\n' " .. tool .. " 2>/dev/null | sort -V -u"
+        "dnf repoquery --quiet --qf '%{version}-%{release}\\n'"
+        .. " --arch '" .. arch .. "'"
+        .. " '" .. resolved .. "' 2>/dev/null | sort -V -u"
     )
 
     if not result or strings.trim_space(result) == "" then
-        error("No versions found for package: " .. tool)
+        error("No versions found for package: " .. resolved)
     end
 
     local versions = {}
@@ -24,10 +56,6 @@ function PLUGIN:BackendListVersions(ctx)
         if v ~= "" then
             table.insert(versions, v)
         end
-    end
-
-    if #versions == 0 then
-        error("No versions parsed for package: " .. tool)
     end
 
     return { versions = versions }
