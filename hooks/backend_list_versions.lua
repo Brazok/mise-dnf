@@ -1,12 +1,22 @@
 --- Resolves the actual RPM package name for a given tool spec.
---- Falls back through: exact name → whatprovides → /usr/bin/<tool> file provide.
+--- Cascade: exact name → virtual provides → file provides in common bin dirs.
 local function resolve_pkg_name(tool, arch)
     return string.format([[
         arch=%q
         name=%q
+        # 1. Exact package name
         pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" "$name" 2>/dev/null | sort -u | head -1)
-        [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --whatprovides "$name" 2>/dev/null | grep -v 'No matches' | sort -u | head -1)
-        [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --file "/usr/bin/$name" 2>/dev/null | sort -u | head -1)
+        # 2. Virtual provides (e.g. Provides: ykman-gui → yubikey-manager-qt)
+        [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --whatprovides "$name" 2>/dev/null | grep -v '^$\|No matches' | sort -u | head -1)
+        # 3. File provides — loop over common bin directories
+        #    --whatprovides /path is more robust; --file /path as fallback
+        if [ -z "$pkg" ]; then
+            for bindir in /usr/bin /usr/sbin /bin /sbin /usr/local/bin; do
+                pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --whatprovides "$bindir/$name" 2>/dev/null | grep -v '^$' | sort -u | head -1)
+                [ -z "$pkg" ] && pkg=$(dnf repoquery --quiet --qf '%%{name}\n' --arch "$arch" --file "$bindir/$name" 2>/dev/null | sort -u | head -1)
+                [ -n "$pkg" ] && break
+            done
+        fi
         printf '%%s' "$pkg"
     ]], arch, tool)
 end
